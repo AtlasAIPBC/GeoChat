@@ -12,7 +12,7 @@
 # docker run -it --rm -p 8080:8080 --gpus all --entrypoint /bin/bash atlasai/geochat:latest
 #
 
-FROM nvidia/cuda:12.3.2-base-ubuntu22.04
+FROM nvidia/cuda:12.3.2-devel-ubuntu22.04
 
 ARG DEBIAN_FRONTEND=noninteractive
 ARG QT_QPA_PLATFORM=offscreen
