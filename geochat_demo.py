@@ -1,4 +1,5 @@
 import argparse
+from functools import partial
 import os
 import random
 from collections import defaultdict
@@ -51,6 +52,10 @@ args = parse_args()
 
 model_name = get_model_name_from_path(args.model_path)
 tokenizer, model, image_processor, context_len = load_pretrained_model(args.model_path, args.model_base, model_name, args.load_8bit, args.load_4bit, device=args.device)
+assert tokenizer is not None, f'Model probably did not load: {model_name}'
+assert model is not None, f'Model probably did not load: {model_name}'
+assert image_processor is not None, f'Model probably did not load: {model_name}'
+assert context_len is not None, f'Model probably did not load: {model_name}'
 
 device = 'cuda:{}'.format(args.gpu_id)
 
@@ -449,8 +454,13 @@ def gradio_reset(chat_state, img_list):
         chat_state.messages = []
     if img_list is not None:
         img_list = []
-    return None, gr.update(value=None, interactive=True), gr.update(placeholder='Upload your image and chat',
-                                                                    interactive=True), chat_state, img_list
+    return (
+        None,
+        gr.update(value=None, interactive=True),
+        gr.update(placeholder='Upload your image and chat', interactive=True),
+        chat_state,
+        img_list
+    )
 
 
 def image_upload_trigger(upload_flag, replace_flag, img_list):
@@ -459,16 +469,6 @@ def image_upload_trigger(upload_flag, replace_flag, img_list):
     upload_flag = 1
     if img_list:
         replace_flag = 1
-    return upload_flag, replace_flag
-
-
-def example_trigger(text_input, image, upload_flag, replace_flag, img_list):
-    # set the upload flag to true when receive a new image.
-    # if there is an old image (and old conversation), set the replace flag to true to reset the conv later.
-    upload_flag = 1
-    if img_list or replace_flag == 1:
-        replace_flag = 1
-
     return upload_flag, replace_flag
 
 
@@ -584,7 +584,7 @@ def gradio_taskselect(idx):
 
 
 
-chat = Chat(model, image_processor,tokenizer, device=device)
+chat = Chat(model, image_processor, tokenizer, device=device)
 
 
 title = """<h1 align="center">GeoChat Demo</h1>"""
@@ -609,7 +609,8 @@ with gr.Blocks() as demo:
 
     with gr.Row():
         with gr.Column(scale=0.5):
-            image = gr.Image(type="pil", tool='sketch', brush_radius=20)
+            #image = gr.Image(type="pil", tool='sketch', brush_radius=20)
+            image = gr.Image(type="pil")
 
             temperature = gr.Slider(
                 minimum=0.1,
@@ -642,25 +643,44 @@ with gr.Blocks() as demo:
 
     upload_flag = gr.State(value=0)
     replace_flag = gr.State(value=0)
-    image.upload(image_upload_trigger, [upload_flag, replace_flag, img_list], [upload_flag, replace_flag])
+    image.upload(
+        image_upload_trigger,
+        [upload_flag, replace_flag, img_list],
+        [upload_flag, replace_flag]
+    )
+
+    def example_trigger(text_input, image):
+        # set the upload flag to true when receive a new image.
+        # if there is an old image (and old conversation), set the replace flag to true to reset the conv later.
+        upload_flag = 1
+        if img_list or replace_flag == 1:
+            replace_flag = 1
+
+        return upload_flag, replace_flag
 
     with gr.Row():
         with gr.Column():
-            gr.Examples(examples=[
-                ["demo_images/train_2956_0001.png", "Where are the airplanes located and what is their type?", upload_flag, replace_flag,
-                 img_list],
-                ["demo_images/7292.JPG", "How many buildings are flooded?", upload_flag,
-                 replace_flag, img_list],
-            ], inputs=[image, text_input, upload_flag, replace_flag, img_list], fn=example_trigger,
-                outputs=[upload_flag, replace_flag])
+            gr.Examples(
+                examples=[
+                    ["demo_images/train_2956_0001.png", "Where are the airplanes located and what is their type?"],
+                    ["demo_images/7292.JPG", "How many buildings are flooded?"],
+                ],
+                inputs=[image, text_input],
+                fn=example_trigger,
+                run_on_click=True,
+                outputs=[upload_flag, replace_flag],
+            )
         with gr.Column():
-            gr.Examples(examples=[
-                ["demo_images/church_183.png", "Classify the image in the following classes: Church, Beach, Dense Residential, Storage Tanks.",
-                 upload_flag, replace_flag, img_list],
-                ["demo_images/04444.png", "[identify] what is this {<8><26><22><37>}", upload_flag,
-                 replace_flag, img_list],
-            ], inputs=[image, text_input, upload_flag, replace_flag, img_list], fn=example_trigger,
-                outputs=[upload_flag, replace_flag])
+            gr.Examples(
+                examples=[
+                    ["demo_images/church_183.png", "Classify the image in the following classes: Church, Beach, Dense Residential, Storage Tanks."],
+                    ["demo_images/04444.png", "[identify] what is this {<8><26><22><37>}"],
+                ],
+                inputs=[image, text_input],
+                fn=example_trigger,
+                run_on_click=True,
+                outputs=[upload_flag, replace_flag],
+            )
 
     dataset.click(
         gradio_taskselect,
@@ -705,7 +725,6 @@ with gr.Blocks() as demo:
 
 demo.launch(
     share=False,
-    enable_queue=True,
     server_name=os.getenv('GRADIO_SERVER_NAME') or '0.0.0.0',
     server_port=int(os.getenv('GRADIO_SERVER_PORT') or 8080),
 )
